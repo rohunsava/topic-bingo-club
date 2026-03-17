@@ -92,7 +92,12 @@ const state = {
     manualWords: Array.from({ length: 5 }, () => ""),
     sourceNotes: [],
     hasGenerated: false,
-    isGenerating: false
+    isGenerating: false,
+    stepIndex: 0
+  },
+  loading: {
+    title: "",
+    message: ""
   },
   play: {
     topic: "",
@@ -133,6 +138,7 @@ document.addEventListener("click", async (event) => {
     if (state.mode === "single") {
       state.multiplayerAction = "create";
     }
+    normalizeSetupStep();
     state.status = {
       tone: "default",
       title: "Pick any topic to start",
@@ -146,6 +152,7 @@ document.addEventListener("click", async (event) => {
 
   if (action === "set-multiplayer-action") {
     state.multiplayerAction = target.dataset.multiplayerAction;
+    normalizeSetupStep();
     state.status = {
       tone: "default",
       title:
@@ -185,7 +192,7 @@ document.addEventListener("click", async (event) => {
   }
 
   if (action === "start-single-player") {
-    startSinglePlayer();
+    await startSinglePlayer();
   }
 
   if (action === "create-room") {
@@ -259,6 +266,18 @@ document.addEventListener("click", async (event) => {
   if (action === "sync-room") {
     await syncRoom();
   }
+
+  if (action === "advance-setup") {
+    await advanceSetup();
+  }
+
+  if (action === "back-setup") {
+    moveToPreviousSetupStep();
+  }
+
+  if (action === "skip-web-lookup") {
+    skipWebLookup();
+  }
 });
 
 document.addEventListener("input", (event) => {
@@ -266,6 +285,13 @@ document.addEventListener("input", (event) => {
   if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
 
   if (target.dataset.field === "topic") {
+    const nextTopic = target.value;
+    if (state.setup.topic !== nextTopic) {
+      state.setup.generatedWords = [];
+      state.setup.selectedGeneratedWords = [];
+      state.setup.sourceNotes = [];
+      state.setup.hasGenerated = false;
+    }
     state.setup.topic = target.value;
   }
 
@@ -405,30 +431,38 @@ function startSinglePlayer() {
     return;
   }
 
-  const board = buildBoard(wordPool);
-  state.play = {
-    topic: state.setup.topic.trim(),
-    roomName: "",
-    roomCode: "",
-    playerName: state.setup.playerName.trim() || "Player",
-    playerToken: "",
-    board,
-    marks: Array.from({ length: 25 }, (_, index) => index === 12),
-    players: [],
-    claimedBingo: false,
-    winningIndexes: [],
-    isMultiplayer: false,
-    isHost: false,
-    wordPoolSize: wordPool.length,
-    updatedAt: new Date().toISOString()
-  };
-  state.screen = "play";
-  state.status = {
-    tone: "success",
-    title: "Board ready",
-    message: "Your bingo board is live. Tap squares as moments happen, then call bingo when you hit a full line."
-  };
-  render();
+  return withLoading(
+    {
+      title: "Generating your bingo board",
+      message: "Shuffling topic words, placing the free space, and getting everything ready."
+    },
+    async () => {
+      await sleep(2000);
+      const board = buildBoard(wordPool);
+      state.play = {
+        topic: state.setup.topic.trim(),
+        roomName: "",
+        roomCode: "",
+        playerName: state.setup.playerName.trim() || "Player",
+        playerToken: "",
+        board,
+        marks: Array.from({ length: 25 }, (_, index) => index === 12),
+        players: [],
+        claimedBingo: false,
+        winningIndexes: [],
+        isMultiplayer: false,
+        isHost: false,
+        wordPoolSize: wordPool.length,
+        updatedAt: new Date().toISOString()
+      };
+      state.screen = "play";
+      state.status = {
+        tone: "success",
+        title: "Board ready",
+        message: "Your bingo board is live. Tap squares as moments happen, then call bingo when you hit a full line."
+      };
+    }
+  );
 }
 
 async function createRoom() {
@@ -463,41 +497,42 @@ async function createRoom() {
     return;
   }
 
-  try {
-    const response = await fetch("/api/rooms/create", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        topic: state.setup.topic,
-        roomName: state.setup.roomName,
-        hostName: state.setup.playerName || "Host",
-        password: state.setup.roomPassword,
-        suggestedWords: state.setup.selectedGeneratedWords,
-        manualWords: state.setup.manualWords
-      })
-    });
-    const data = await response.json();
+  await withLoading(
+    {
+      title: "Opening your multiplayer room",
+      message: "Securing the room, shuffling boards, and preparing the shared session."
+    },
+    async () => {
+      const [response] = await Promise.all([
+        fetch("/api/rooms/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            topic: state.setup.topic,
+            roomName: state.setup.roomName,
+            hostName: state.setup.playerName || "Host",
+            password: state.setup.roomPassword,
+            suggestedWords: state.setup.selectedGeneratedWords,
+            manualWords: state.setup.manualWords
+          })
+        }),
+        sleep(2200)
+      ]);
+      const data = await response.json();
 
-    if (!response.ok) {
-      throw new Error(data.error || "Room creation failed.");
+      if (!response.ok) {
+        throw new Error(data.error || "Room creation failed.");
+      }
+
+      hydrateRoom(data);
+      state.status = {
+        tone: "success",
+        title: "Room created",
+        message: `Share code ${data.room.code} and your chosen password so other players can join.`
+      };
+      startSync();
     }
-
-    hydrateRoom(data);
-    state.status = {
-      tone: "success",
-      title: "Room created",
-      message: `Share code ${data.room.code} and your chosen password so other players can join.`
-    };
-    startSync();
-    render();
-  } catch (error) {
-    state.status = {
-      tone: "warning",
-      title: "Room creation failed",
-      message: error.message
-    };
-    render();
-  }
+  );
 }
 
 async function joinRoom() {
@@ -511,38 +546,39 @@ async function joinRoom() {
     return;
   }
 
-  try {
-    const response = await fetch("/api/rooms/join", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        roomCode: state.setup.roomCode,
-        password: state.setup.roomPassword,
-        playerName: state.setup.playerName || "Guest"
-      })
-    });
-    const data = await response.json();
+  await withLoading(
+    {
+      title: "Joining the room",
+      message: "Checking the password, pulling your board, and syncing the room roster."
+    },
+    async () => {
+      const [response] = await Promise.all([
+        fetch("/api/rooms/join", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            roomCode: state.setup.roomCode,
+            password: state.setup.roomPassword,
+            playerName: state.setup.playerName || "Guest"
+          })
+        }),
+        sleep(2200)
+      ]);
+      const data = await response.json();
 
-    if (!response.ok) {
-      throw new Error(data.error || "Room join failed.");
+      if (!response.ok) {
+        throw new Error(data.error || "Room join failed.");
+      }
+
+      hydrateRoom(data);
+      state.status = {
+        tone: "success",
+        title: "You are in",
+        message: `Room ${data.room.code} is ready. Your board was generated from the host's topic word pool.`
+      };
+      startSync();
     }
-
-    hydrateRoom(data);
-    state.status = {
-      tone: "success",
-      title: "You are in",
-      message: `Room ${data.room.code} is ready. Your board was generated from the host's topic word pool.`
-    };
-    startSync();
-    render();
-  } catch (error) {
-    state.status = {
-      tone: "warning",
-      title: "Could not join room",
-      message: error.message
-    };
-    render();
-  }
+  );
 }
 
 async function toggleBoardCell(index) {
@@ -751,6 +787,186 @@ function getWinningIndexes(marks) {
   return bingoLines.filter((line) => line.every((index) => marks[index])).flat();
 }
 
+function getSetupFlow() {
+  const flow = ["mode"];
+
+  if (state.mode === "multiplayer") {
+    flow.push("multiplayerAction");
+  }
+
+  const isJoinFlow = state.mode === "multiplayer" && state.multiplayerAction === "join";
+
+  if (isJoinFlow) {
+    flow.push("roomCode", "roomPassword", "playerName", "readyJoin");
+    return flow;
+  }
+
+  flow.push("topic", "playerName");
+
+  if (state.mode === "multiplayer") {
+    flow.push("roomName", "roomPassword");
+  }
+
+  flow.push("generateWords", "wordBank", "readyBuild");
+  return flow;
+}
+
+function normalizeSetupStep() {
+  const steps = getSetupFlow();
+  state.setup.stepIndex = Math.max(0, Math.min(state.setup.stepIndex, steps.length - 1));
+}
+
+function getCurrentSetupStepId() {
+  normalizeSetupStep();
+  const steps = getSetupFlow();
+  return steps[state.setup.stepIndex];
+}
+
+function moveToNextSetupStep() {
+  const steps = getSetupFlow();
+  state.setup.stepIndex = Math.min(state.setup.stepIndex + 1, steps.length - 1);
+  render();
+}
+
+function moveToPreviousSetupStep() {
+  state.setup.stepIndex = Math.max(state.setup.stepIndex - 1, 0);
+  render();
+}
+
+function getSetupProgressPercent() {
+  const totalSteps = getSetupFlow().length;
+  if (totalSteps <= 1) return 0;
+  return Math.round((state.setup.stepIndex / (totalSteps - 1)) * 100);
+}
+
+async function advanceSetup() {
+  const stepId = getCurrentSetupStepId();
+  const wordPool = getSelectedWordPool();
+
+  if (stepId === "mode") {
+    moveToNextSetupStep();
+    return;
+  }
+
+  if (stepId === "multiplayerAction") {
+    moveToNextSetupStep();
+    return;
+  }
+
+  if (stepId === "topic") {
+    if (!state.setup.topic.trim()) {
+      state.status = {
+        tone: "warning",
+        title: "Add a topic first",
+        message: "This is the prompt the app uses to shape the board."
+      };
+      render();
+      return;
+    }
+    moveToNextSetupStep();
+    return;
+  }
+
+  if (stepId === "roomCode") {
+    if (state.setup.roomCode.trim().length < 4) {
+      state.status = {
+        tone: "warning",
+        title: "Add the room code",
+        message: "Use the code the host shared with you so the app knows which room to join."
+      };
+      render();
+      return;
+    }
+    moveToNextSetupStep();
+    return;
+  }
+
+  if (stepId === "roomPassword") {
+    if (!state.setup.roomPassword.trim()) {
+      state.status = {
+        tone: "warning",
+        title: "Add the room password",
+        message: "The room password is required before the app can move forward."
+      };
+      render();
+      return;
+    }
+    moveToNextSetupStep();
+    return;
+  }
+
+  if (stepId === "generateWords") {
+    await generateTopicWords();
+    moveToNextSetupStep();
+    return;
+  }
+
+  if (stepId === "wordBank") {
+    if (wordPool.length < 24) {
+      state.status = {
+        tone: "warning",
+        title: "Add more unique words",
+        message: `You currently have ${wordPool.length}. A full bingo board needs 24 words plus the free center square.`
+      };
+      render();
+      return;
+    }
+    moveToNextSetupStep();
+    return;
+  }
+
+  if (stepId === "readyBuild") {
+    if (state.mode === "single") {
+      await startSinglePlayer();
+      return;
+    }
+    await createRoom();
+    return;
+  }
+
+  if (stepId === "readyJoin") {
+    await joinRoom();
+    return;
+  }
+
+  moveToNextSetupStep();
+}
+
+function skipWebLookup() {
+  state.status = {
+    tone: "default",
+    title: "Manual word mode",
+    message: "No problem. You can keep building the word bank yourself from the next step."
+  };
+  moveToNextSetupStep();
+}
+
+async function withLoading(loadingState, task) {
+  const previousScreen = state.screen;
+  state.loading = loadingState;
+  state.screen = "loading";
+  render();
+
+  try {
+    await task();
+    render();
+  } catch (error) {
+    state.screen = previousScreen;
+    state.status = {
+      tone: "warning",
+      title: "Setup could not finish",
+      message: error.message || "Something went wrong while finishing setup."
+    };
+    render();
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 function applyPreferences() {
   const theme = themes[state.preferences.theme] || themes.sunset;
   const root = document.documentElement;
@@ -825,241 +1041,349 @@ function render() {
         </div>
       </header>
 
-      ${state.screen === "play" ? renderPlayScreen() : renderSetupScreen()}
+      ${state.screen === "play" ? renderPlayScreen() : state.screen === "loading" ? renderLoadingScreen() : renderSetupScreen()}
     </div>
     ${state.isSettingsOpen ? renderSettingsDrawer() : ""}
   `;
 }
 
 function renderSetupScreen() {
+  normalizeSetupStep();
   const wordPool = getSelectedWordPool();
   const generatedCount = state.setup.selectedGeneratedWords.length;
   const manualCount = state.setup.manualWords.filter((word) => sanitizeWord(word)).length;
-  const needsWords = Math.max(0, 24 - wordPool.length);
+  const stepId = getCurrentSetupStepId();
+  const flow = getSetupFlow();
 
   return `
-    <main class="setup-layout">
-      <section class="hero-card">
+    <main class="setup-wizard">
+      <section class="hero-card wizard-shell">
         <span class="eyebrow">5x5 Bingo Builder</span>
-        <h2 class="hero-title">Start with the topic, then let the room take shape.</h2>
-        <div class="hero-copy">
-          <p>The first step is always the theme. From there, you can play solo, host a protected room, or join one with a code and password.</p>
-          <p>The app tries the web first for topic words, but you always keep full control with manual word entry and optional custom backgrounds.</p>
+        <h2 class="hero-title wizard-hero-title">A gentler setup flow, one question at a time.</h2>
+        <div class="hero-copy wizard-copy">
+          <p>Pick your topic, choose single-player or multiplayer, and let the board come together step by step instead of all at once.</p>
         </div>
-        <div class="feature-row">
+        <div class="feature-row wizard-feature-row">
           <div class="pill">Free center square included</div>
-          <div class="pill">Manual word entry always on</div>
-          <div class="pill">Password-protected rooms</div>
+          <div class="pill">Manual words always available</div>
+          <div class="pill">Private rooms with passwords</div>
         </div>
 
-        <div class="section-card">
-          <div class="section-head">
-            <h2>Choose your mode</h2>
-          </div>
-          <div class="mode-toggle">
-            <button class="toggle-pill ${state.mode === "single" ? "is-active" : ""}" data-action="set-mode" data-mode="single">Single player</button>
-            <button class="toggle-pill ${state.mode === "multiplayer" ? "is-active" : ""}" data-action="set-mode" data-mode="multiplayer">Multiplayer</button>
-          </div>
-          ${
-            state.mode === "multiplayer"
-              ? `
-                <div class="submode-toggle" style="margin-top:0.8rem;">
-                  <button class="toggle-pill ${state.multiplayerAction === "create" ? "is-active" : ""}" data-action="set-multiplayer-action" data-multiplayer-action="create">Create room</button>
-                  <button class="toggle-pill ${state.multiplayerAction === "join" ? "is-active" : ""}" data-action="set-multiplayer-action" data-multiplayer-action="join">Join room</button>
-                </div>
-              `
-              : ""
-          }
-        </div>
-
-        <div class="section-card">
-          <div class="status-banner ${state.status.tone === "warning" ? "is-warning" : ""} ${state.status.tone === "success" ? "is-success" : ""}">
-            <div class="status-kicker">${state.status.tone === "success" ? "OK" : state.status.tone === "warning" ? "!" : "i"}</div>
-            <div>
-              <strong>${escapeHtml(state.status.title)}</strong>
-              <p class="status-text">${escapeHtml(state.status.message)}</p>
-            </div>
+        <div class="status-banner ${state.status.tone === "warning" ? "is-warning" : ""} ${state.status.tone === "success" ? "is-success" : ""}">
+          <div class="status-kicker">${state.status.tone === "success" ? "OK" : state.status.tone === "warning" ? "!" : "i"}</div>
+          <div>
+            <strong>${escapeHtml(state.status.title)}</strong>
+            <p class="status-text">${escapeHtml(state.status.message)}</p>
           </div>
         </div>
 
-        ${
-          state.mode === "multiplayer" && state.multiplayerAction === "join"
-            ? renderJoinFields()
-            : renderBuildFields({
-                wordPool,
-                generatedCount,
-                manualCount,
-                needsWords
-              })
-        }
+        <section class="setup-question-card" data-step="${escapeHtml(stepId)}">
+          ${renderSetupStep({
+            stepId,
+            stepNumber: state.setup.stepIndex + 1,
+            totalSteps: flow.length,
+            wordPool,
+            generatedCount,
+            manualCount
+          })}
+        </section>
       </section>
-      <aside class="preview-card">
-        <h2>What the finished experience feels like</h2>
-        <p class="small-text">The board becomes the main focal point once setup is done, while colors and background live in a separate settings space.</p>
-        <div class="metric-row">
-          <div class="metric">
-            <strong>${wordPool.length}</strong>
-            <span>Unique words ready</span>
-          </div>
-          <div class="metric">
-            <strong>${generatedCount}</strong>
-            <span>Web words selected</span>
-          </div>
-          <div class="metric">
-            <strong>${manualCount}</strong>
-            <span>Manual words added</span>
-          </div>
-        </div>
-        <div>
-          <div class="bingo-label-row">
-            <div class="bingo-label">B</div>
-            <div class="bingo-label">I</div>
-            <div class="bingo-label">N</div>
-            <div class="bingo-label">G</div>
-            <div class="bingo-label">O</div>
-          </div>
-          <div class="bingo-board">
-            ${sampleBoard().map((cell, index) => `
-              <div class="bingo-cell ${index === 12 ? "is-free" : index % 3 === 0 ? "is-marked" : ""}">
-                <strong>${escapeHtml(cell)}</strong>
-              </div>
-            `).join("")}
-          </div>
-        </div>
-        <div class="section-card">
-          <h3>Room flow</h3>
-          <p class="small-text">Hosts choose the topic and word pool once. Each player who joins the password-protected room gets a fresh board built from that same shared set of words.</p>
-        </div>
-      </aside>
+      ${renderSetupProgress({ complete: false })}
     </main>
   `;
 }
 
-function renderBuildFields({ wordPool, needsWords }) {
-  return `
-    <section class="section-card">
-      <div class="section-head">
-        <h2>Setup</h2>
-        <span class="small-text">${wordPool.length}/24 board words ready</span>
+function renderSetupStep({ stepId, stepNumber, totalSteps, wordPool, generatedCount, manualCount }) {
+  const needsWords = Math.max(0, 24 - wordPool.length);
+  const backButton = state.setup.stepIndex > 0
+    ? `<button class="ghost-btn" data-action="back-setup">Back</button>`
+    : "";
+
+  if (stepId === "mode") {
+    return `
+      <div class="setup-step-meta">Step ${stepNumber} of ${totalSteps}</div>
+      <h3 class="setup-step-title">How do you want to play?</h3>
+      <p class="setup-step-copy">Start solo, or get a room ready for a group.</p>
+      <div class="mode-toggle">
+        <button class="toggle-pill ${state.mode === "single" ? "is-active" : ""}" data-action="set-mode" data-mode="single">Single player</button>
+        <button class="toggle-pill ${state.mode === "multiplayer" ? "is-active" : ""}" data-action="set-mode" data-mode="multiplayer">Multiplayer</button>
       </div>
-      <div class="field-grid">
-        <div class="field">
-          <label for="topic">Topic</label>
-          <input id="topic" data-field="topic" value="${escapeHtml(state.setup.topic)}" placeholder="Baby shower, funeral, carnival, Product Support Days..." />
-          <p class="field-note">This is the first prompt your app uses to shape the word bank.</p>
+      <div class="setup-step-actions">
+        ${backButton}
+        <button class="btn" data-action="advance-setup">Continue</button>
+      </div>
+    `;
+  }
+
+  if (stepId === "multiplayerAction") {
+    return `
+      <div class="setup-step-meta">Step ${stepNumber} of ${totalSteps}</div>
+      <h3 class="setup-step-title">Are you hosting or joining?</h3>
+      <p class="setup-step-copy">Hosts create the topic and word pool. Guests just need the code and password.</p>
+      <div class="submode-toggle">
+        <button class="toggle-pill ${state.multiplayerAction === "create" ? "is-active" : ""}" data-action="set-multiplayer-action" data-multiplayer-action="create">Create room</button>
+        <button class="toggle-pill ${state.multiplayerAction === "join" ? "is-active" : ""}" data-action="set-multiplayer-action" data-multiplayer-action="join">Join room</button>
+      </div>
+      <div class="setup-step-actions">
+        ${backButton}
+        <button class="btn" data-action="advance-setup">Continue</button>
+      </div>
+    `;
+  }
+
+  if (stepId === "topic") {
+    return `
+      <div class="setup-step-meta">Step ${stepNumber} of ${totalSteps}</div>
+      <h3 class="setup-step-title">What is your topic?</h3>
+      <p class="setup-step-copy">This is the first prompt the app takes, and it shapes the word bank for the board.</p>
+      <div class="field">
+        <label for="topic">Topic</label>
+        <input id="topic" data-field="topic" value="${escapeHtml(state.setup.topic)}" placeholder="Funeral, baby shower, Product Support Days, carnival..." />
+      </div>
+      <div class="setup-step-actions">
+        ${backButton}
+        <button class="btn" data-action="advance-setup">Continue</button>
+      </div>
+    `;
+  }
+
+  if (stepId === "playerName") {
+    const label = state.mode === "multiplayer" && state.multiplayerAction === "create"
+      ? "Host name"
+      : "Player name";
+
+    return `
+      <div class="setup-step-meta">Step ${stepNumber} of ${totalSteps}</div>
+      <h3 class="setup-step-title">What should we call you?</h3>
+      <p class="setup-step-copy">This can stay simple. If you leave it blank, the app will use a default player name.</p>
+      <div class="field">
+        <label for="playerName">${label}</label>
+        <input id="playerName" data-field="playerName" value="${escapeHtml(state.setup.playerName)}" placeholder="Your name" />
+      </div>
+      <div class="setup-step-actions">
+        ${backButton}
+        <button class="btn" data-action="advance-setup">Continue</button>
+      </div>
+    `;
+  }
+
+  if (stepId === "roomName") {
+    return `
+      <div class="setup-step-meta">Step ${stepNumber} of ${totalSteps}</div>
+      <h3 class="setup-step-title">What should the room be called?</h3>
+      <p class="setup-step-copy">Give the room a clear name so it feels intentional when people join.</p>
+      <div class="field">
+        <label for="roomName">Room name</label>
+        <input id="roomName" data-field="roomName" value="${escapeHtml(state.setup.roomName)}" placeholder="Team Offsite Bingo" />
+      </div>
+      <div class="setup-step-actions">
+        ${backButton}
+        <button class="btn" data-action="advance-setup">Continue</button>
+      </div>
+    `;
+  }
+
+  if (stepId === "roomCode") {
+    return `
+      <div class="setup-step-meta">Step ${stepNumber} of ${totalSteps}</div>
+      <h3 class="setup-step-title">What room code did the host share?</h3>
+      <p class="setup-step-copy">Enter the code first, then the password on the next screen.</p>
+      <div class="field">
+        <label for="joinRoomCode">Room code</label>
+        <input id="joinRoomCode" data-field="roomCode" value="${escapeHtml(state.setup.roomCode)}" placeholder="AB12CD" />
+      </div>
+      <div class="setup-step-actions">
+        ${backButton}
+        <button class="btn" data-action="advance-setup">Continue</button>
+      </div>
+    `;
+  }
+
+  if (stepId === "roomPassword") {
+    const copy = state.mode === "multiplayer" && state.multiplayerAction === "join"
+      ? "Use the password the host gave you so the app can unlock the room."
+      : "This adds a little security before you share the room code with other players.";
+
+    return `
+      <div class="setup-step-meta">Step ${stepNumber} of ${totalSteps}</div>
+      <h3 class="setup-step-title">Set the room password</h3>
+      <p class="setup-step-copy">${escapeHtml(copy)}</p>
+      <div class="field">
+        <label for="roomPassword">Password</label>
+        <input id="roomPassword" type="password" data-field="roomPassword" value="${escapeHtml(state.setup.roomPassword)}" placeholder="At least 4 characters" />
+      </div>
+      <div class="setup-step-actions">
+        ${backButton}
+        <button class="btn" data-action="advance-setup">Continue</button>
+      </div>
+    `;
+  }
+
+  if (stepId === "generateWords") {
+    return `
+      <div class="setup-step-meta">Step ${stepNumber} of ${totalSteps}</div>
+      <h3 class="setup-step-title">Want help building the word bank?</h3>
+      <p class="setup-step-copy">The app will try the web first for <strong>${escapeHtml(state.setup.topic)}</strong>, and manual words stay available either way.</p>
+      <div class="setup-mini-summary">
+        <div class="metric">
+          <strong>${generatedCount}</strong>
+          <span>Generated words selected</span>
         </div>
-        <div class="field">
-          <label for="playerName">${state.mode === "single" ? "Player name" : "Host name"}</label>
-          <input id="playerName" data-field="playerName" value="${escapeHtml(state.setup.playerName)}" placeholder="Your name" />
-          <p class="field-note">Optional, but helpful for multiplayer rooms and scoreboards.</p>
+        <div class="metric">
+          <strong>${manualCount}</strong>
+          <span>Manual words added</span>
+        </div>
+      </div>
+      <div class="setup-step-actions">
+        ${backButton}
+        <button class="ghost-btn" data-action="skip-web-lookup">Skip web lookup</button>
+        <button class="btn" data-action="advance-setup">${state.setup.isGenerating ? "Generating..." : state.setup.hasGenerated ? "Refresh suggestions" : "Generate words"}</button>
+      </div>
+    `;
+  }
+
+  if (stepId === "wordBank") {
+    return `
+      <div class="setup-step-meta">Step ${stepNumber} of ${totalSteps}</div>
+      <h3 class="setup-step-title">Which words should go on the board?</h3>
+      <p class="setup-step-copy">Keep the web suggestions you like, add your own, and build to 24 unique words before the free center square is added.</p>
+      <div class="setup-mini-summary">
+        <div class="metric">
+          <strong>${wordPool.length}</strong>
+          <span>Unique words ready</span>
+        </div>
+        <div class="metric">
+          <strong>${generatedCount}</strong>
+          <span>Web words selected</span>
+        </div>
+        <div class="metric">
+          <strong>${manualCount}</strong>
+          <span>Manual words added</span>
+        </div>
+      </div>
+      <div class="section-card wizard-inner-card">
+        <div class="section-head">
+          <h3>Generated words</h3>
+          <span class="small-text">${generatedCount} selected</span>
         </div>
         ${
-          state.mode === "multiplayer"
+          state.setup.generatedWords.length
             ? `
-              <div class="field">
-                <label for="roomName">Room name</label>
-                <input id="roomName" data-field="roomName" value="${escapeHtml(state.setup.roomName)}" placeholder="Team Offsite Bingo" />
-              </div>
-              <div class="field">
-                <label for="roomPassword">Room password</label>
-                <input id="roomPassword" data-field="roomPassword" value="${escapeHtml(state.setup.roomPassword)}" placeholder="At least 4 characters" />
+              <div class="word-chip-wrap">
+                ${state.setup.generatedWords.map((word) => `
+                  <button class="chip ${state.setup.selectedGeneratedWords.includes(word) ? "is-selected" : ""}" data-action="toggle-generated-word" data-word="${escapeHtml(word)}">${escapeHtml(word)}</button>
+                `).join("")}
               </div>
             `
+            : `<p class="empty-text">No generated words yet. That is okay. The manual inputs below can carry the full board if needed.</p>`
+        }
+        ${
+          state.setup.sourceNotes.length
+            ? `<p class="field-note">Sources used: ${escapeHtml(state.setup.sourceNotes.join(", "))}</p>`
             : ""
         }
       </div>
-      <div class="button-row">
-        <button class="btn" data-action="generate-topic-words">${state.setup.isGenerating ? "Generating..." : "Generate words from the web"}</button>
-      </div>
-      ${
-        state.setup.sourceNotes.length
-          ? `<p class="field-note">Sources used: ${escapeHtml(state.setup.sourceNotes.join(", "))}</p>`
-          : `<p class="field-note">If the web comes up short, the app will keep you moving with manual words instead.</p>`
-      }
-    </section>
-
-    <section class="section-card">
-      <div class="section-head">
-        <h2>Generated words</h2>
-        <span class="small-text">${state.setup.selectedGeneratedWords.length} selected</span>
-      </div>
-      ${
-        state.setup.generatedWords.length
-          ? `
-            <div class="word-chip-wrap">
-              ${state.setup.generatedWords.map((word) => `
-                <button class="chip ${state.setup.selectedGeneratedWords.includes(word) ? "is-selected" : ""}" data-action="toggle-generated-word" data-word="${escapeHtml(word)}">${escapeHtml(word)}</button>
-              `).join("")}
+      <div class="section-card wizard-inner-card">
+        <div class="section-head">
+          <h3>Manual words</h3>
+          <span class="small-text">Starts with 5 slots</span>
+        </div>
+        <div class="manual-list">
+          ${state.setup.manualWords.map((word, index) => `
+            <div class="manual-item">
+              <input data-field="manualWord" data-index="${index}" value="${escapeHtml(word)}" placeholder="Custom word ${index + 1}" />
+              <button type="button" data-action="remove-manual-word" data-index="${index}" aria-label="Remove custom word ${index + 1}" ${state.setup.manualWords.length > 5 ? "" : "disabled"}>${state.setup.manualWords.length > 5 ? "Remove" : "Keep"}</button>
             </div>
-          `
-          : `
-            <p class="empty-text">No generated words yet. Run the web lookup above, or skip straight to manual words if you already know what you want on the board.</p>
-          `
-      }
-    </section>
-
-    <section class="section-card">
-      <div class="section-head">
-        <h2>Manual word entry</h2>
-        <span class="small-text">Starts with 5 slots, add as many as you want</span>
-      </div>
-      <div class="manual-list">
-        ${state.setup.manualWords.map((word, index) => `
-          <div class="manual-item">
-            <input data-field="manualWord" data-index="${index}" value="${escapeHtml(word)}" placeholder="Custom word ${index + 1}" />
-            <button type="button" data-action="remove-manual-word" data-index="${index}" aria-label="Remove custom word ${index + 1}" ${state.setup.manualWords.length > 5 ? "" : "disabled"}>${state.setup.manualWords.length > 5 ? "Remove" : "Keep"}</button>
-          </div>
-        `).join("")}
-      </div>
-      <div class="button-row">
-        <button class="ghost-btn" data-action="add-manual-word">Add another word</button>
-      </div>
-      <p class="field-note">
-        ${
-          needsWords > 0
+          `).join("")}
+        </div>
+        <div class="button-row">
+          <button class="ghost-btn" data-action="add-manual-word">Add another word</button>
+        </div>
+        <p class="field-note">
+          ${needsWords > 0
             ? `You need ${needsWords} more unique words before the board can be built.`
-            : "You have enough words to build the board right now."
-        }
-      </p>
-    </section>
-
-    <section class="section-card">
-      <div class="button-row">
-        ${
-          state.mode === "single"
-            ? `<button class="btn" data-action="start-single-player">Create single-player board</button>`
-            : `<button class="btn" data-action="create-room">Create multiplayer room</button>`
-        }
+            : "You have enough words to build the board right now."}
+        </p>
       </div>
-    </section>
+      <div class="setup-step-actions">
+        ${backButton}
+        <button class="btn" data-action="advance-setup">Continue</button>
+      </div>
+    `;
+  }
+
+  if (stepId === "readyJoin") {
+    return `
+      <div class="setup-step-meta">Step ${stepNumber} of ${totalSteps}</div>
+      <h3 class="setup-step-title">Ready to join the room?</h3>
+      <p class="setup-step-copy">Once you continue, the app will pull your board and make it the main focus of the screen.</p>
+      <div class="setup-review-grid">
+        <div class="metric">
+          <strong>${escapeHtml(state.setup.roomCode || "Pending")}</strong>
+          <span>Room code</span>
+        </div>
+        <div class="metric">
+          <strong>${escapeHtml(state.setup.playerName || "Guest")}</strong>
+          <span>Player name</span>
+        </div>
+      </div>
+      <div class="setup-step-actions">
+        ${backButton}
+        <button class="btn" data-action="advance-setup">Join room</button>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="setup-step-meta">Step ${stepNumber} of ${totalSteps}</div>
+    <h3 class="setup-step-title">Ready to build the board?</h3>
+    <p class="setup-step-copy">The setup is done. Next up is a short loading moment while the board is generated and brought front and center.</p>
+    <div class="setup-review-grid">
+      <div class="metric">
+        <strong>${escapeHtml(state.setup.topic || "Pending")}</strong>
+        <span>Topic</span>
+      </div>
+      <div class="metric">
+        <strong>${escapeHtml(state.mode === "multiplayer" ? (state.setup.roomName || `${state.setup.topic || "Topic"} Bingo`) : "Single player")}</strong>
+        <span>${state.mode === "multiplayer" ? "Room name" : "Mode"}</span>
+      </div>
+      <div class="metric">
+        <strong>${wordPool.length}</strong>
+        <span>Words ready</span>
+      </div>
+    </div>
+    <div class="setup-step-actions">
+      ${backButton}
+      <button class="btn" data-action="advance-setup">${state.mode === "single" ? "Generate board" : "Create room"}</button>
+    </div>
   `;
 }
 
-function renderJoinFields() {
+function renderSetupProgress({ complete }) {
+  const percent = complete ? 100 : getSetupProgressPercent();
   return `
-    <section class="section-card">
-      <div class="section-head">
-        <h2>Join a room</h2>
+    <div class="setup-progress ${complete ? "is-complete" : ""}">
+      <div class="setup-progress-track">
+        <div class="setup-progress-fill" style="width:${percent}%"></div>
       </div>
-      <div class="field-grid">
-        <div class="field">
-          <label for="joinRoomCode">Room code</label>
-          <input id="joinRoomCode" data-field="roomCode" value="${escapeHtml(state.setup.roomCode)}" placeholder="AB12CD" />
+      <span class="setup-progress-label">${percent}%</span>
+    </div>
+  `;
+}
+
+function renderLoadingScreen() {
+  return `
+    <main class="setup-wizard">
+      <section class="hero-card wizard-shell wizard-shell-loading">
+        <div class="loading-spinner" aria-hidden="true"></div>
+        <div class="loading-copy">
+          <span class="eyebrow">Loading board</span>
+          <h2 class="hero-title wizard-hero-title">${escapeHtml(state.loading.title)}</h2>
+          <p class="setup-step-copy">${escapeHtml(state.loading.message)}</p>
         </div>
-        <div class="field">
-          <label for="joinRoomPassword">Password</label>
-          <input id="joinRoomPassword" data-field="roomPassword" value="${escapeHtml(state.setup.roomPassword)}" placeholder="Room password" />
-        </div>
-        <div class="field is-full">
-          <label for="joinPlayerName">Your player name</label>
-          <input id="joinPlayerName" data-field="playerName" value="${escapeHtml(state.setup.playerName)}" placeholder="Your name" />
-          <p class="field-note">The host controls the topic and word list, so you only need the room details here.</p>
-        </div>
-      </div>
-      <div class="button-row">
-        <button class="btn" data-action="join-room">Join room</button>
-      </div>
-    </section>
+      </section>
+      ${renderSetupProgress({ complete: true })}
+    </main>
   `;
 }
 
