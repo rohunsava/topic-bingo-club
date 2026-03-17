@@ -612,10 +612,26 @@ button {
   font-weight: 700;
 }
 
+.chip-static {
+  cursor: default;
+}
+
 .chip.is-selected {
   background: rgba(212, 109, 74, 0.14);
   border-color: rgba(212, 109, 74, 0.3);
   color: var(--accent-strong);
+}
+
+.chip-generated {
+  background: rgba(212, 109, 74, 0.12);
+  border-color: rgba(212, 109, 74, 0.24);
+  color: var(--accent-strong);
+}
+
+.chip-manual {
+  background: rgba(29, 124, 145, 0.12);
+  border-color: rgba(29, 124, 145, 0.26);
+  color: #0f5261;
 }
 
 .manual-list {

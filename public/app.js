@@ -769,6 +769,12 @@ function getSelectedWordPool() {
   return all;
 }
 
+function getManualEnteredWords() {
+  return state.setup.manualWords
+    .map((word) => sanitizeWord(word))
+    .filter(Boolean);
+}
+
 function isGeneratedWordSelected(word) {
   return state.setup.selectedGeneratedWords.includes(word);
 }
@@ -1119,6 +1125,7 @@ function renderSetupStep({ stepId, stepNumber, totalSteps, wordPool, generatedCo
   const backButton = state.setup.stepIndex > 0
     ? `<button class="ghost-btn" data-action="back-setup">Back</button>`
     : "";
+  const manualEnteredWords = getManualEnteredWords();
 
   if (stepId === "mode") {
     return `
@@ -1282,7 +1289,28 @@ function renderSetupStep({ stepId, stepNumber, totalSteps, wordPool, generatedCo
           <span>Manual words added</span>
         </div>
       </div>
-        <div class="section-card wizard-inner-card">
+      <div class="section-card wizard-inner-card">
+        <div class="section-head">
+          <h3>Using on the board</h3>
+          <span class="small-text">${wordPool.length} active words</span>
+        </div>
+        ${
+          wordPool.length
+            ? `
+              <div class="word-chip-wrap">
+                ${state.setup.selectedGeneratedWords.map((word) => `
+                  <span class="chip chip-static chip-generated">${escapeHtml(word)}</span>
+                `).join("")}
+                ${manualEnteredWords.map((word) => `
+                  <span class="chip chip-static chip-manual">${escapeHtml(word)}</span>
+                `).join("")}
+              </div>
+              <p class="field-note">App-generated words and your manual words are both included here, with manual entries highlighted separately.</p>
+            `
+            : `<p class="empty-text">Start selecting generated words or typing manual words to build your active board list.</p>`
+        }
+      </div>
+      <div class="section-card wizard-inner-card">
         <div class="section-head">
           <h3>Generated words</h3>
           <span class="small-text">${generatedCount} selected</span>
