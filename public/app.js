@@ -117,6 +117,11 @@ const state = {
     title: "",
     message: ""
   },
+  fx: {
+    streak: 0,
+    toast: null,
+    burst: null
+  },
   play: {
     topic: "",
     roomName: "",
@@ -141,6 +146,8 @@ const state = {
 
 const app = document.getElementById("app");
 let syncInterval = null;
+let toastTimeout = null;
+let burstTimeout = null;
 
 applyPreferences();
 render();
@@ -261,6 +268,7 @@ document.addEventListener("click", async (event) => {
   if (action === "new-game") {
     stopSync();
     state.screen = "setup";
+    resetPlayFx();
     state.play = {
       topic: "",
       roomName: "",
@@ -474,6 +482,7 @@ function startSinglePlayer() {
     async () => {
       await sleep(2000);
       const board = buildBoard(wordPool);
+      resetPlayFx();
       state.play = {
         topic: state.setup.topic.trim(),
         roomName: "",
@@ -559,6 +568,7 @@ async function createRoom() {
         throw new Error(data.error || "Room creation failed.");
       }
 
+      resetPlayFx();
       hydrateRoom(data);
       state.status = {
         tone: "success",
@@ -605,6 +615,7 @@ async function joinRoom() {
         throw new Error(data.error || "Room join failed.");
       }
 
+      resetPlayFx();
       hydrateRoom(data);
       state.status = {
         tone: "success",
@@ -620,16 +631,25 @@ async function toggleBoardCell(index) {
   if (index === 12) return;
 
   if (!state.play.isMultiplayer) {
+    const hadWinningLine = getCompletedLineCount(state.play.marks) > 0;
     state.play.marks[index] = !state.play.marks[index];
     state.play.winningIndexes = getWinningIndexes(state.play.marks);
     if (!state.play.winningIndexes.length) {
       state.play.claimedBingo = false;
     }
+    handleMarkFeedback({
+      marked: state.play.marks[index],
+      gainedLine: !hadWinningLine && getCompletedLineCount(state.play.marks) > 0,
+      toggledOff: !state.play.marks[index],
+      index
+    });
     render();
     return;
   }
 
   try {
+    const wasMarked = state.play.marks[index];
+    const hadWinningLine = getCompletedLineCount(state.play.marks) > 0;
     const response = await fetch(`/api/rooms/${state.play.roomCode}/mark`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -643,6 +663,12 @@ async function toggleBoardCell(index) {
       throw new Error(data.error || "Could not mark the square.");
     }
     hydrateRoom(data);
+    handleMarkFeedback({
+      marked: state.play.marks[index] && !wasMarked,
+      gainedLine: !hadWinningLine && getCompletedLineCount(state.play.marks) > 0,
+      toggledOff: wasMarked && !state.play.marks[index],
+      index
+    });
     render();
   } catch (error) {
     state.status = {
@@ -670,6 +696,8 @@ async function claimBingo() {
   if (!state.play.isMultiplayer) {
     state.play.claimedBingo = true;
     state.play.winningIndexes = winningIndexes;
+    triggerCelebration("BINGO!", "bingo");
+    showToast("Bingo locked in. Nice run.", "success");
     state.status = {
       tone: "success",
       title: "Bingo",
@@ -692,6 +720,8 @@ async function claimBingo() {
       throw new Error(data.error || "Could not claim bingo.");
     }
     hydrateRoom(data);
+    triggerCelebration("BINGO!", "bingo");
+    showToast("The room can see your bingo call now.", "success");
     state.status = {
       tone: "success",
       title: "Bingo called",
@@ -764,6 +794,20 @@ function stopSync() {
   }
 }
 
+function resetPlayFx() {
+  state.fx.streak = 0;
+  state.fx.toast = null;
+  state.fx.burst = null;
+  if (toastTimeout) {
+    window.clearTimeout(toastTimeout);
+    toastTimeout = null;
+  }
+  if (burstTimeout) {
+    window.clearTimeout(burstTimeout);
+    burstTimeout = null;
+  }
+}
+
 function getSelectedWordPool() {
   const seen = new Set();
   const all = [];
@@ -830,6 +874,85 @@ function shuffle(items) {
 
 function getWinningIndexes(marks) {
   return bingoLines.filter((line) => line.every((index) => marks[index])).flat();
+}
+
+function getCompletedLineCount(marks) {
+  return bingoLines.filter((line) => line.every((index) => marks[index])).length;
+}
+
+function getPlayScore() {
+  const markedCount = state.play.marks.filter(Boolean).length;
+  const lineCount = getCompletedLineCount(state.play.marks);
+  return markedCount * 125 + lineCount * 400 + (state.play.claimedBingo ? 1500 : 0);
+}
+
+function handleMarkFeedback({ marked, gainedLine, toggledOff = false, index }) {
+  if (marked) {
+    state.fx.streak += 1;
+    if (gainedLine) {
+      triggerCelebration("LINE UP!", "line");
+      showToast("Line complete. You are heating up.", "success");
+    } else {
+      const messages = [
+        "Nice hit.",
+        "Clean mark.",
+        "That square is yours.",
+        "Momentum building.",
+        "Board energy up."
+      ];
+      triggerCelebration("+125", "mark", index);
+      showToast(messages[Math.floor(Math.random() * messages.length)], "default");
+    }
+    return;
+  }
+
+  if (toggledOff) {
+    state.fx.streak = Math.max(0, state.fx.streak - 1);
+    showToast("Square reopened.", "default");
+  }
+}
+
+function showToast(message, tone = "default") {
+  state.fx.toast = {
+    id: crypto.randomUUID(),
+    message,
+    tone
+  };
+  if (toastTimeout) {
+    window.clearTimeout(toastTimeout);
+  }
+  toastTimeout = window.setTimeout(() => {
+    state.fx.toast = null;
+    render();
+  }, 1800);
+}
+
+function triggerCelebration(label, tone = "mark", seed = 0) {
+  const particleCount = tone === "bingo" ? 18 : tone === "line" ? 12 : 8;
+  const particles = Array.from({ length: particleCount }, (_, index) => ({
+    id: `${tone}-${index}`,
+    x: 42 + ((index * 37 + seed * 13) % 26),
+    y: 42 + ((index * 23 + seed * 7) % 18),
+    dx: ((index % 2 === 0 ? 1 : -1) * (18 + (index % 5) * 7)),
+    dy: -24 - (index % 4) * 12,
+    size: 8 + (index % 4) * 4,
+    delay: index * 20
+  }));
+
+  state.fx.burst = {
+    id: crypto.randomUUID(),
+    label,
+    tone,
+    particles
+  };
+
+  if (burstTimeout) {
+    window.clearTimeout(burstTimeout);
+  }
+  burstTimeout = window.setTimeout(() => {
+    state.fx.burst = null;
+    render();
+  }, tone === "bingo" ? 1800 : 1100);
 }
 
 function getSetupFlow() {
@@ -1094,6 +1217,7 @@ function render() {
 
       ${state.screen === "play" ? renderPlayScreen() : state.screen === "loading" ? renderLoadingScreen() : renderSetupScreen()}
     </div>
+    ${state.screen === "play" ? renderFxLayer() : ""}
     ${state.isSettingsOpen ? renderSettingsDrawer() : ""}
   `;
 }
@@ -1470,121 +1594,166 @@ function renderPlayScreen() {
   const playerCount = state.play.players.length || 1;
   const markedCount = state.play.marks.filter(Boolean).length;
   const winningIndexes = new Set(state.play.winningIndexes);
+  const score = getPlayScore();
+  const lineCount = getCompletedLineCount(state.play.marks);
   return `
-    <main class="play-layout">
-      <section class="play-card">
-        <div class="play-head">
-          <div>
-            <span class="eyebrow">${state.play.isMultiplayer ? "Multiplayer room" : "Single player"}</span>
-            <h2 style="margin-top:0.9rem;">${escapeHtml(state.play.roomName || `${state.play.topic} Bingo`)}</h2>
-            <p class="play-topic">Topic: ${escapeHtml(state.play.topic)}${state.play.roomCode ? ` · Room code: ${escapeHtml(state.play.roomCode)}` : ""}</p>
-          </div>
-          <div class="status-banner ${state.play.claimedBingo ? "is-success" : ""}">
-            <div class="status-kicker">${state.play.claimedBingo ? "B" : markedCount}</div>
+    <main class="play-stage">
+      <div class="play-atmosphere" aria-hidden="true">
+        ${Array.from({ length: 12 }, (_, index) => `
+          <span class="play-spark" style="--spark-x:${8 + (index * 8) % 84}%;--spark-y:${10 + (index * 13) % 72}%;--spark-delay:${index * 0.4}s;"></span>
+        `).join("")}
+      </div>
+      <div class="play-layout">
+        <section class="play-card play-card-gamey">
+          <div class="play-head">
             <div>
-              <strong>${state.play.claimedBingo ? "Bingo locked in" : "Keep marking your board"}</strong>
-              <p class="status-text">
-                ${
-                  state.play.claimedBingo
-                    ? "You have a winning line on the board."
-                    : "Tap squares as they happen. The free center square is already marked."
-                }
-              </p>
+              <span class="eyebrow">${state.play.isMultiplayer ? "Multiplayer room" : "Single player"}</span>
+              <h2 style="margin-top:0.9rem;">${escapeHtml(state.play.roomName || `${state.play.topic} Bingo`)}</h2>
+              <p class="play-topic">Topic: ${escapeHtml(state.play.topic)}${state.play.roomCode ? ` · Room code: ${escapeHtml(state.play.roomCode)}` : ""}</p>
+            </div>
+            <div class="status-banner ${state.play.claimedBingo ? "is-success" : ""}">
+              <div class="status-kicker">${state.play.claimedBingo ? "B" : markedCount}</div>
+              <div>
+                <strong>${state.play.claimedBingo ? "Bingo locked in" : "Keep marking your board"}</strong>
+                <p class="status-text">
+                  ${
+                    state.play.claimedBingo
+                      ? "You have a winning line on the board."
+                      : "Tap squares as they happen. The free center square is already marked."
+                  }
+                </p>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="bingo-label-row">
-          <div class="bingo-label">B</div>
-          <div class="bingo-label">I</div>
-          <div class="bingo-label">N</div>
-          <div class="bingo-label">G</div>
-          <div class="bingo-label">O</div>
-        </div>
-        <div class="bingo-board">
-          ${state.play.board.map((cell, index) => `
-            <button
-              class="bingo-cell ${state.play.marks[index] ? "is-marked" : ""} ${cell.free ? "is-free" : ""} ${winningIndexes.has(index) ? "is-winning" : ""}"
-              data-action="toggle-board-cell"
-              data-index="${index}"
-              ${cell.free ? "disabled" : ""}
-            >
-              <strong>${escapeHtml(cell.label)}</strong>
-            </button>
-          `).join("")}
-        </div>
-      </section>
+          <div class="game-hud">
+            <div class="game-hud-card">
+              <span class="game-hud-label">Score</span>
+              <strong>${score}</strong>
+            </div>
+            <div class="game-hud-card">
+              <span class="game-hud-label">Streak</span>
+              <strong>${state.fx.streak}</strong>
+            </div>
+            <div class="game-hud-card">
+              <span class="game-hud-label">Lines</span>
+              <strong>${lineCount}</strong>
+            </div>
+          </div>
 
-      <aside class="side-stack">
-        <section class="side-card">
-          <h2>Game details</h2>
-          <div class="metric-row" style="margin-top:1rem;">
-            <div class="metric">
-              <strong>${markedCount}</strong>
-              <span>Squares marked</span>
-            </div>
-            <div class="metric">
-              <strong>${state.play.wordPoolSize}</strong>
-              <span>Words in pool</span>
-            </div>
-            <div class="metric">
-              <strong>${playerCount}</strong>
-              <span>${state.play.isMultiplayer ? "Players in room" : "Player"}</span>
-            </div>
+          <div class="bingo-label-row">
+            <div class="bingo-label">B</div>
+            <div class="bingo-label">I</div>
+            <div class="bingo-label">N</div>
+            <div class="bingo-label">G</div>
+            <div class="bingo-label">O</div>
           </div>
-          <div class="button-row">
-            <button class="btn" data-action="claim-bingo">Call bingo</button>
-            ${
-              state.play.isMultiplayer
-                ? `<button class="ghost-btn" data-action="sync-room">Sync now</button>`
-                : `<button class="ghost-btn" data-action="new-game">Build another board</button>`
-            }
+          <div class="bingo-board">
+            ${state.play.board.map((cell, index) => `
+              <button
+                class="bingo-cell ${state.play.marks[index] ? "is-marked" : ""} ${cell.free ? "is-free" : ""} ${winningIndexes.has(index) ? "is-winning" : ""}"
+                data-action="toggle-board-cell"
+                data-index="${index}"
+                ${cell.free ? "disabled" : ""}
+              >
+                <strong>${escapeHtml(cell.label)}</strong>
+              </button>
+            `).join("")}
           </div>
-          <p class="field-note" style="margin-top:0.8rem;">
-            ${
-              state.play.isMultiplayer
-                ? `Last synced ${escapeHtml(relativeTime(state.play.updatedAt))}.`
-                : "Single-player boards update instantly on your device."
-            }
-          </p>
         </section>
 
-        ${
-          state.play.isMultiplayer
-            ? `
-              <section class="side-card">
-                <h2>Room players</h2>
-                <div class="player-list">
-                  ${state.play.players.map((player) => `
-                    <article class="player-card">
-                      <div class="player-line">
-                        <span class="player-name">${escapeHtml(player.name)}</span>
-                        <span class="player-meta">${player.markedCount} marks</span>
-                      </div>
-                      <p class="player-meta">Joined ${escapeHtml(relativeTime(player.joinedAt))}</p>
-                      <p class="player-status ${player.claimedBingo ? "is-success" : ""}">
-                        ${
-                          player.claimedBingo
-                            ? "Called bingo"
-                            : player.hasBingo
-                              ? "Has a winning line ready"
-                              : `Active ${escapeHtml(relativeTime(player.lastSeenAt))}`
-                        }
-                      </p>
-                    </article>
-                  `).join("")}
-                </div>
-              </section>
-            `
-            : `
-              <section class="side-card">
-                <h2>How to customize</h2>
-                <p class="small-text">Use the settings button in the top bar whenever you want to switch themes or upload your own background image.</p>
-              </section>
-            `
-        }
-      </aside>
+        <aside class="side-stack">
+          <section class="side-card side-card-arcade">
+            <h2>Game details</h2>
+            <div class="metric-row" style="margin-top:1rem;">
+              <div class="metric">
+                <strong>${markedCount}</strong>
+                <span>Squares marked</span>
+              </div>
+              <div class="metric">
+                <strong>${state.play.wordPoolSize}</strong>
+                <span>Words in pool</span>
+              </div>
+              <div class="metric">
+                <strong>${playerCount}</strong>
+                <span>${state.play.isMultiplayer ? "Players in room" : "Player"}</span>
+              </div>
+            </div>
+            <div class="button-row">
+              <button class="btn btn-pulse" data-action="claim-bingo">Call bingo</button>
+              ${
+                state.play.isMultiplayer
+                  ? `<button class="ghost-btn" data-action="sync-room">Sync now</button>`
+                  : `<button class="ghost-btn" data-action="new-game">Build another board</button>`
+              }
+            </div>
+            <p class="field-note" style="margin-top:0.8rem;">
+              ${
+                state.play.isMultiplayer
+                  ? `Last synced ${escapeHtml(relativeTime(state.play.updatedAt))}.`
+                  : "Single-player boards update instantly on your device."
+              }
+            </p>
+          </section>
+
+          ${
+            state.play.isMultiplayer
+              ? `
+                <section class="side-card side-card-arcade">
+                  <h2>Room players</h2>
+                  <div class="player-list">
+                    ${state.play.players.map((player) => `
+                      <article class="player-card">
+                        <div class="player-line">
+                          <span class="player-name">${escapeHtml(player.name)}</span>
+                          <span class="player-meta">${player.markedCount} marks</span>
+                        </div>
+                        <p class="player-meta">Joined ${escapeHtml(relativeTime(player.joinedAt))}</p>
+                        <p class="player-status ${player.claimedBingo ? "is-success" : ""}">
+                          ${
+                            player.claimedBingo
+                              ? "Called bingo"
+                              : player.hasBingo
+                                ? "Has a winning line ready"
+                                : `Active ${escapeHtml(relativeTime(player.lastSeenAt))}`
+                          }
+                        </p>
+                      </article>
+                    `).join("")}
+                  </div>
+                </section>
+              `
+              : `
+                <section class="side-card side-card-arcade">
+                  <h2>Bonus energy</h2>
+                  <p class="small-text">Keep the streak climbing, chase a full line, and use settings anytime you want to swap themes or upload your own background image.</p>
+                </section>
+              `
+          }
+        </aside>
+      </div>
     </main>
+  `;
+}
+
+function renderFxLayer() {
+  return `
+    ${state.fx.toast ? `
+      <div class="game-toast game-toast-${escapeHtml(state.fx.toast.tone)}">
+        <span>${escapeHtml(state.fx.toast.message)}</span>
+      </div>
+    ` : ""}
+    ${state.fx.burst ? `
+      <div class="celebration-layer celebration-${escapeHtml(state.fx.burst.tone)}" aria-hidden="true">
+        <div class="celebration-label">${escapeHtml(state.fx.burst.label)}</div>
+        ${state.fx.burst.particles.map((particle) => `
+          <span
+            class="celebration-particle"
+            style="--particle-x:${particle.x}%;--particle-y:${particle.y}%;--particle-dx:${particle.dx}px;--particle-dy:${particle.dy}px;--particle-size:${particle.size}px;--particle-delay:${particle.delay}ms;"
+          ></span>
+        `).join("")}
+      </div>
+    ` : ""}
   `;
 }
 
