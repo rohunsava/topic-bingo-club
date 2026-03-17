@@ -166,7 +166,11 @@ document.addEventListener("click", async (event) => {
   }
 
   if (action === "toggle-generated-word") {
-    const word = target.dataset.word;
+    const index = Number(target.dataset.index);
+    const word = state.setup.generatedWords[index];
+    if (typeof word !== "string") {
+      return;
+    }
     const exists = state.setup.selectedGeneratedWords.includes(word);
     state.setup.selectedGeneratedWords = exists
       ? state.setup.selectedGeneratedWords.filter((item) => item !== word)
@@ -315,6 +319,19 @@ document.addEventListener("input", (event) => {
   if (target.dataset.field === "manualWord") {
     const index = Number(target.dataset.index);
     state.setup.manualWords[index] = target.value;
+  }
+
+  if (target.dataset.field === "generatedWord") {
+    const index = Number(target.dataset.index);
+    const previousValue = state.setup.generatedWords[index];
+    const nextValue = target.value;
+
+    state.setup.generatedWords[index] = nextValue;
+
+    const selectedIndex = state.setup.selectedGeneratedWords.indexOf(previousValue);
+    if (selectedIndex !== -1) {
+      state.setup.selectedGeneratedWords[selectedIndex] = nextValue;
+    }
   }
 });
 
@@ -750,6 +767,10 @@ function getSelectedWordPool() {
   }
 
   return all;
+}
+
+function isGeneratedWordSelected(word) {
+  return state.setup.selectedGeneratedWords.includes(word);
 }
 
 function sanitizeWord(value) {
@@ -1261,7 +1282,7 @@ function renderSetupStep({ stepId, stepNumber, totalSteps, wordPool, generatedCo
           <span>Manual words added</span>
         </div>
       </div>
-      <div class="section-card wizard-inner-card">
+        <div class="section-card wizard-inner-card">
         <div class="section-head">
           <h3>Generated words</h3>
           <span class="small-text">${generatedCount} selected</span>
@@ -1269,9 +1290,15 @@ function renderSetupStep({ stepId, stepNumber, totalSteps, wordPool, generatedCo
         ${
           state.setup.generatedWords.length
             ? `
-              <div class="word-chip-wrap">
-                ${state.setup.generatedWords.map((word) => `
-                  <button class="chip ${state.setup.selectedGeneratedWords.includes(word) ? "is-selected" : ""}" data-action="toggle-generated-word" data-word="${escapeHtml(word)}">${escapeHtml(word)}</button>
+              <p class="field-note">You can edit any generated word below if you want to tweak the wording before it goes on the board.</p>
+              <div class="generated-word-list">
+                ${state.setup.generatedWords.map((word, index) => `
+                  <div class="generated-word-item">
+                    <button class="chip ${isGeneratedWordSelected(word) ? "is-selected" : ""}" data-action="toggle-generated-word" data-index="${index}">
+                      ${isGeneratedWordSelected(word) ? "Using" : "Skip"}
+                    </button>
+                    <input data-field="generatedWord" data-index="${index}" value="${escapeHtml(word)}" placeholder="Generated word ${index + 1}" />
+                  </div>
                 `).join("")}
               </div>
             `

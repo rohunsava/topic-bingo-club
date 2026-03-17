@@ -578,6 +578,28 @@ button {
   min-height: 2.5rem;
 }
 
+.generated-word-list {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.85rem;
+}
+
+.generated-word-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.generated-word-item input {
+  width: 100%;
+  border: 1px solid rgba(85, 97, 115, 0.18);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 0.82rem 0.9rem;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
@@ -964,6 +986,10 @@ button {
   .metric-row,
   .setup-mini-summary,
   .setup-review-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .generated-word-item {
     grid-template-columns: 1fr;
   }
 
