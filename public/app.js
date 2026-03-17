@@ -1059,7 +1059,7 @@ function renderSetupScreen() {
     <main class="setup-wizard">
       <section class="hero-card wizard-shell">
         <span class="eyebrow">5x5 Bingo Builder</span>
-        <h2 class="hero-title wizard-hero-title">A gentler setup flow, one question at a time.</h2>
+        <h2 class="hero-title wizard-hero-title">Lets bulid your bingo board!</h2>
         <div class="hero-copy wizard-copy">
           <p>Pick your topic, choose single-player or multiplayer, and let the board come together step by step instead of all at once.</p>
         </div>
