@@ -1,15 +1,21 @@
 :root {
-  --bg: #f3efe5;
-  --bg-strong: #fffaf2;
-  --surface: rgba(255, 251, 244, 0.72);
-  --surface-strong: rgba(255, 255, 255, 0.84);
-  --surface-solid: #fffdf9;
+  --bg: #ffffff;
+  --bg-strong: #ffffff;
+  --surface: rgba(255, 255, 255, 0.82);
+  --surface-strong: rgba(255, 255, 255, 0.92);
+  --surface-solid: #ffffff;
   --line: rgba(53, 71, 91, 0.18);
   --text: #1f2937;
   --muted: #556173;
   --accent: #d46d4a;
   --accent-strong: #8c351a;
   --accent-soft: rgba(212, 109, 74, 0.16);
+  --accent-outline: rgba(212, 109, 74, 0.28);
+  --accent-focus: rgba(212, 109, 74, 0.45);
+  --accent-transparent: rgba(212, 109, 74, 0.18);
+  --ambient-a: rgba(212, 109, 74, 0.18);
+  --ambient-b: rgba(140, 53, 26, 0.1);
+  --ambient-c: rgba(212, 109, 74, 0.08);
   --success: #2b8a67;
   --shadow: 0 24px 70px rgba(57, 48, 35, 0.16);
   --radius-xl: 30px;
@@ -34,11 +40,8 @@ body {
   font-family: "Manrope", "Segoe UI", sans-serif;
   color: var(--text);
   background:
-    linear-gradient(135deg, rgba(255, 239, 214, 0.86), rgba(255, 250, 242, 0.7)),
-    radial-gradient(circle at top left, rgba(255, 191, 138, 0.55), transparent 32%),
-    radial-gradient(circle at 85% 14%, rgba(157, 219, 200, 0.4), transparent 24%),
-    radial-gradient(circle at 50% 100%, rgba(140, 53, 26, 0.18), transparent 30%),
     var(--custom-bg),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(255, 255, 255, 0.99)),
     var(--bg);
   background-size: cover;
   background-position: center;
@@ -57,7 +60,7 @@ button {
 }
 
 :focus-visible {
-  outline: 3px solid rgba(212, 109, 74, 0.55);
+  outline: 3px solid var(--accent-focus);
   outline-offset: 3px;
 }
 
@@ -80,7 +83,7 @@ button {
   height: 16rem;
   left: -4rem;
   top: 5rem;
-  background: rgba(250, 162, 117, 0.46);
+  background: var(--ambient-a);
 }
 
 .ambient-b {
@@ -88,7 +91,7 @@ button {
   height: 22rem;
   right: -6rem;
   top: 20%;
-  background: rgba(77, 140, 123, 0.26);
+  background: var(--ambient-b);
 }
 
 .ambient-c {
@@ -96,7 +99,7 @@ button {
   height: 18rem;
   left: 42%;
   bottom: -6rem;
-  background: rgba(116, 105, 182, 0.14);
+  background: var(--ambient-c);
 }
 
 .page {
@@ -127,12 +130,12 @@ button {
   width: 3rem;
   height: 3rem;
   border-radius: 18px;
-  background: linear-gradient(145deg, rgba(212, 109, 74, 0.95), rgba(140, 53, 26, 0.9));
+  background: linear-gradient(145deg, var(--accent), var(--accent-strong));
   color: white;
   font-family: "Sora", sans-serif;
   font-weight: 800;
   letter-spacing: 0.08em;
-  box-shadow: 0 12px 28px rgba(140, 53, 26, 0.24);
+  box-shadow: 0 12px 28px var(--accent-soft);
 }
 
 .brand-copy h1,
@@ -213,7 +216,7 @@ button {
   padding: 0.45rem 0.8rem;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.62);
-  border: 1px solid rgba(212, 109, 74, 0.2);
+  border: 1px solid var(--accent-outline);
   color: var(--accent-strong);
   font-weight: 700;
   font-size: 0.8rem;
@@ -526,9 +529,9 @@ button {
 }
 
 .toggle-pill.is-active {
-  background: rgba(212, 109, 74, 0.12);
+  background: var(--accent-soft);
   color: var(--accent-strong);
-  border-color: rgba(212, 109, 74, 0.28);
+  border-color: var(--accent-outline);
 }
 
 .status-banner {
@@ -543,7 +546,7 @@ button {
 
 .status-banner.is-warning {
   background: rgba(255, 243, 230, 0.9);
-  border-color: rgba(212, 109, 74, 0.24);
+  border-color: var(--accent-outline);
 }
 
 .status-banner.is-success {
@@ -617,14 +620,14 @@ button {
 }
 
 .chip.is-selected {
-  background: rgba(212, 109, 74, 0.14);
-  border-color: rgba(212, 109, 74, 0.3);
+  background: var(--accent-soft);
+  border-color: var(--accent-outline);
   color: var(--accent-strong);
 }
 
 .chip-generated {
-  background: rgba(212, 109, 74, 0.12);
-  border-color: rgba(212, 109, 74, 0.24);
+  background: var(--accent-soft);
+  border-color: var(--accent-outline);
   color: var(--accent-strong);
 }
 
@@ -708,8 +711,8 @@ button {
 }
 
 .bingo-cell.is-marked {
-  background: rgba(255, 250, 245, 0.96);
-  border-color: rgba(212, 109, 74, 0.34);
+  background: rgba(255, 255, 255, 0.96);
+  border-color: var(--accent-outline);
 }
 
 .bingo-cell.is-free {
@@ -730,7 +733,7 @@ button {
   font-family: "Sora", sans-serif;
   font-size: clamp(3.5rem, 8vw, 6rem);
   line-height: 1;
-  color: rgba(212, 109, 74, 0.18);
+  color: var(--accent-transparent);
   opacity: 0;
   transform: scale(0.86);
   transition: opacity 180ms ease, transform 180ms ease;

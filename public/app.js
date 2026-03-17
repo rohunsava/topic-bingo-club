@@ -1,49 +1,67 @@
 const themes = {
   sunset: {
     name: "Sunset Paper",
-    bg: "#f3efe5",
-    bgStrong: "#fffaf2",
-    surface: "rgba(255, 251, 244, 0.72)",
-    surfaceStrong: "rgba(255, 255, 255, 0.84)",
-    surfaceSolid: "#fffdf9",
+    bg: "#ffffff",
+    bgStrong: "#ffffff",
+    surface: "rgba(255, 255, 255, 0.82)",
+    surfaceStrong: "rgba(255, 255, 255, 0.92)",
+    surfaceSolid: "#ffffff",
     line: "rgba(53, 71, 91, 0.18)",
     text: "#1f2937",
     muted: "#556173",
     accent: "#d46d4a",
     accentStrong: "#8c351a",
     accentSoft: "rgba(212, 109, 74, 0.16)",
+    accentOutline: "rgba(212, 109, 74, 0.28)",
+    accentFocus: "rgba(212, 109, 74, 0.45)",
+    accentTransparent: "rgba(212, 109, 74, 0.18)",
+    ambientA: "rgba(212, 109, 74, 0.18)",
+    ambientB: "rgba(140, 53, 26, 0.1)",
+    ambientC: "rgba(212, 109, 74, 0.08)",
     success: "#2b8a67",
     swatch: ["#f8d8bf", "#d46d4a", "#376f64"]
   },
   harbor: {
     name: "Harbor Night",
-    bg: "#e7f0f2",
-    bgStrong: "#f8fdff",
-    surface: "rgba(241, 249, 251, 0.72)",
-    surfaceStrong: "rgba(255, 255, 255, 0.88)",
-    surfaceSolid: "#fbfeff",
+    bg: "#ffffff",
+    bgStrong: "#ffffff",
+    surface: "rgba(255, 255, 255, 0.82)",
+    surfaceStrong: "rgba(255, 255, 255, 0.92)",
+    surfaceSolid: "#ffffff",
     line: "rgba(42, 79, 97, 0.18)",
     text: "#18313f",
     muted: "#4d6471",
     accent: "#1d7c91",
     accentStrong: "#0f5261",
     accentSoft: "rgba(29, 124, 145, 0.16)",
+    accentOutline: "rgba(29, 124, 145, 0.28)",
+    accentFocus: "rgba(29, 124, 145, 0.42)",
+    accentTransparent: "rgba(29, 124, 145, 0.18)",
+    ambientA: "rgba(29, 124, 145, 0.17)",
+    ambientB: "rgba(15, 82, 97, 0.1)",
+    ambientC: "rgba(29, 124, 145, 0.08)",
     success: "#2f8b63",
     swatch: ["#cfe5eb", "#1d7c91", "#f6a76b"]
   },
   festival: {
     name: "Festival Bloom",
-    bg: "#fff1ec",
-    bgStrong: "#fffaf8",
-    surface: "rgba(255, 245, 241, 0.75)",
-    surfaceStrong: "rgba(255, 255, 255, 0.9)",
-    surfaceSolid: "#fffdfa",
+    bg: "#ffffff",
+    bgStrong: "#ffffff",
+    surface: "rgba(255, 255, 255, 0.82)",
+    surfaceStrong: "rgba(255, 255, 255, 0.92)",
+    surfaceSolid: "#ffffff",
     line: "rgba(108, 71, 89, 0.16)",
     text: "#412433",
     muted: "#6c4759",
     accent: "#e55d4f",
     accentStrong: "#9c3328",
     accentSoft: "rgba(229, 93, 79, 0.14)",
+    accentOutline: "rgba(229, 93, 79, 0.28)",
+    accentFocus: "rgba(229, 93, 79, 0.42)",
+    accentTransparent: "rgba(229, 93, 79, 0.17)",
+    ambientA: "rgba(229, 93, 79, 0.18)",
+    ambientB: "rgba(156, 51, 40, 0.1)",
+    ambientC: "rgba(229, 93, 79, 0.08)",
     success: "#2f8b63",
     swatch: ["#ffd6cb", "#e55d4f", "#ffbd59"]
   }
@@ -1008,6 +1026,12 @@ function applyPreferences() {
   root.style.setProperty("--accent", theme.accent);
   root.style.setProperty("--accent-strong", theme.accentStrong);
   root.style.setProperty("--accent-soft", theme.accentSoft);
+  root.style.setProperty("--accent-outline", theme.accentOutline);
+  root.style.setProperty("--accent-focus", theme.accentFocus);
+  root.style.setProperty("--accent-transparent", theme.accentTransparent);
+  root.style.setProperty("--ambient-a", theme.ambientA);
+  root.style.setProperty("--ambient-b", theme.ambientB);
+  root.style.setProperty("--ambient-c", theme.ambientC);
   root.style.setProperty("--success", theme.success);
   root.style.setProperty(
     "--custom-bg",
